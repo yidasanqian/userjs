@@ -4,11 +4,13 @@ X/Twitter 页面右上角的「隐藏侧栏 / 显示侧栏」按钮：一键隐�
 
 - 脚本：[x-sidebar-toggle.user.js](x-sidebar-toggle.user.js)
 - 安装（GitHub raw）：<https://raw.githubusercontent.com/yidasanqian/userjs/main/x-sidebar-toggle.user.js>
-- 安装（jsDelivr 镜像，国内直连可用）：<https://cdn.jsdelivr.net/gh/yidasanqian/userjs@main/x-sidebar-toggle.user.js>
+- 安装（jsDelivr 镜像，国内直连可用）：<https://cdn.jsdelivr.net/gh/yidasanqian/userjs@3cc473f/x-sidebar-toggle.user.js>
 - 支持站点：`https://x.com/*`、`https://twitter.com/*`
 - 环境：Tampermonkey、Violentmonkey 等支持 `GM_getValue` / `GM_setValue` 的脚本管理器
 
 > 实测 `raw.githubusercontent.com` 在国内直连会被重置（本机需代理才能 200）；`cdn.jsdelivr.net` 直连正常。脚本头部的 `@updateURL` / `@downloadURL` 仍指向 raw，镜像链接仅用于首次安装。
+>
+> 镜像用 **commit SHA 固定**（示例 `@3cc473f`）：raw 的 CDN 缓存约 5 分钟刷新，jsDelivr 的 `@main` 分支缓存可达 12 小时，发版后短时间内拿不到新代码；每次发版把哈希换成新的提交即可立刻生效。
 
 ## 安装
 
