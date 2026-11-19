@@ -1,16 +1,16 @@
 // ==UserScript==
-// @name         X Left Menu Toggle
-// @name:zh-CN   X 左侧菜单显示隐藏
+// @name         X Sidebar Toggle
+// @name:zh-CN   X 侧栏显示隐藏
 // @namespace    https://github.com/yidasanqian/userjs
-// @version      1.1.0
+// @version      1.1.1
 // @description  Show or hide the left navigation menu and the right sidebar on X/Twitter.
 // @description:zh-CN 在 X/Twitter 页面右上角添加按钮，一键显示或隐藏左侧菜单与右侧边栏，让时间线更干净。
 // @author       yidasanqian
 // @license      MIT
 // @homepageURL  https://github.com/yidasanqian/userjs
 // @supportURL   https://github.com/yidasanqian/userjs/issues
-// @downloadURL  https://raw.githubusercontent.com/yidasanqian/userjs/main/x-menu-toggle.user.js
-// @updateURL    https://raw.githubusercontent.com/yidasanqian/userjs/main/x-menu-toggle.user.js
+// @downloadURL  https://raw.githubusercontent.com/yidasanqian/userjs/main/x-sidebar-toggle.user.js
+// @updateURL    https://raw.githubusercontent.com/yidasanqian/userjs/main/x-sidebar-toggle.user.js
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @run-at       document-idle
@@ -22,11 +22,11 @@
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'x_left_menu_hidden';
-  const HIDDEN_CLASS = 'x-left-menu-hidden';
-  const TARGET_ATTR = 'data-x-left-menu-target';
-  const BUTTON_ID = 'x-left-menu-toggle-button';
-  const STYLE_ID = 'x-left-menu-toggle-style';
+  const STORAGE_KEY = 'x_sidebar_hidden';
+  const HIDDEN_CLASS = 'x-sidebar-hidden';
+  const TARGET_ATTR = 'data-x-toggle-target';
+  const BUTTON_ID = 'x-sidebar-toggle-button';
+  const STYLE_ID = 'x-sidebar-toggle-style';
   const MIN_DESKTOP_WIDTH = 900;
 
   function readHiddenState() {

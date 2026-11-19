@@ -1,10 +1,10 @@
-# X Left Menu Toggle
+# X Sidebar Toggle
 
 X/Twitter 页面右上角的「隐藏侧栏 / 显示侧栏」按钮：一键隐藏左侧导航菜单与右侧边栏（搜索框、相关用户、趋势、页脚），让时间线居中。
 
-- 脚本：[x-menu-toggle.user.js](x-menu-toggle.user.js)
-- 安装（GitHub raw）：<https://raw.githubusercontent.com/yidasanqian/userjs/main/x-menu-toggle.user.js>
-- 安装（jsDelivr 镜像，国内直连可用）：<https://cdn.jsdelivr.net/gh/yidasanqian/userjs@main/x-menu-toggle.user.js>
+- 脚本：[x-sidebar-toggle.user.js](x-sidebar-toggle.user.js)
+- 安装（GitHub raw）：<https://raw.githubusercontent.com/yidasanqian/userjs/main/x-sidebar-toggle.user.js>
+- 安装（jsDelivr 镜像，国内直连可用）：<https://cdn.jsdelivr.net/gh/yidasanqian/userjs@main/x-sidebar-toggle.user.js>
 - 支持站点：`https://x.com/*`、`https://twitter.com/*`
 - 环境：Tampermonkey、Violentmonkey 等支持 `GM_getValue` / `GM_setValue` 的脚本管理器
 
