@@ -28,7 +28,8 @@ X/Twitter 页面右上角的「隐藏侧栏 / 显示侧栏」按钮：一键隐�
 
 ## 已知限制
 
-- 依赖 X 的 DOM 结构，不依赖混淆类名：右栏取右侧半屏内的 `aside`，左栏取同一 flex 行内包含 `nav` 的那一列，命中后给元素打 `data-x-toggle-role="left|right|row|content|main"` 标记，样式全部作用在标记上。旧版 `[data-testid="sidebarColumn"]` / `header[role="banner"]` 选择器保留兜底。
+- 依赖 X 的 DOM 结构，不依赖混淆类名：主列取 `[data-testid="primaryColumn"]`，右栏取两列行容器中包含 `[data-testid="SearchBox_Search_Input"]` 的那一列，左栏取 `header[role="banner"]`。命中后打 `data-x-toggle-role="left|right|primary|expand"` 标记：`left` / `right` 直接隐藏，主列到 `main` 之间的容器标 `expand` 逐层放开宽度，主列再用 `margin-inline: auto` 居中。
+- 右栏常晚于时间线渲染，未命中时按 500ms 节流重试，不缓存半成品布局。
 - X 若再次改动布局，优先用浏览器实际 DOM 校验上面这组结构假设，而不是追加类名选择器。
 - 未在真实页面做自动化回归；页面结构变化时以浏览器里实际 DOM 为准。
 

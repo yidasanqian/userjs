@@ -2,7 +2,7 @@
 // @name         X Sidebar Toggle
 // @name:zh-CN   X 侧栏显示隐藏
 // @namespace    https://github.com/yidasanqian/userjs
-// @version      1.3.0
+// @version      1.4.0
 // @description  Show or hide the left navigation menu and the right sidebar on X/Twitter.
 // @description:zh-CN 在 X/Twitter 页面右上角添加按钮，一键显示或隐藏左侧菜单与右侧边栏，让时间线更干净。
 // @author       yidasanqian
@@ -29,6 +29,7 @@
   const STYLE_ID = 'x-sidebar-toggle-style';
   const REPO_URL = 'https://github.com/yidasanqian/userjs';
   const MIN_DESKTOP_WIDTH = 900;
+  const COLUMN_MISS_COOLDOWN = 500;
 
   const ICONS = {
     sidebar:
@@ -67,22 +68,13 @@ body.${HIDDEN_CLASS} [${ROLE_ATTR}="right"] {
 }
 
 @media (min-width: ${MIN_DESKTOP_WIDTH}px) {
-  body.${HIDDEN_CLASS} [${ROLE_ATTR}="row"] {
-    display: flex !important;
+  /* 主列到 main 之间的容器逐层放开宽度，主列再用自动外边距居中 */
+  body.${HIDDEN_CLASS} [${ROLE_ATTR}="expand"] {
     width: 100% !important;
-    justify-content: center !important;
   }
 
-  body.${HIDDEN_CLASS} [${ROLE_ATTR}="content"] {
-    display: flex !important;
-    justify-content: center !important;
-    width: auto !important;
-    max-width: min(680px, calc(100vw - 32px)) !important;
-  }
-
-  body.${HIDDEN_CLASS} [${ROLE_ATTR}="main"] {
-    width: 100% !important;
-    max-width: min(680px, calc(100vw - 32px)) !important;
+  body.${HIDDEN_CLASS} [${ROLE_ATTR}="primary"] {
+    margin-inline: auto !important;
   }
 }
 
@@ -191,24 +183,25 @@ body.${HIDDEN_CLASS} [${ROLE_ATTR}="right"] {
     document.head.appendChild(style);
   }
 
-  function findRightSidebar() {
-    const marked = document.querySelector(`[${ROLE_ATTR}="right"]`);
-    if (marked && marked.isConnected) {
-      return marked;
+  // 新版 X 去掉了右栏的语义化 testid 之外的一切线索，两列列容器用主列与搜索框反查：
+  // 同时包含主列与搜索框的最小祖先即两列的 flex 行，行内包含搜索框的那一列就是右栏。
+  function findColumns() {
+    const primary = document.querySelector('[data-testid="primaryColumn"]');
+    const search = document.querySelector('[data-testid="SearchBox_Search_Input"]');
+    if (!primary || !search) {
+      return null;
     }
 
-    const legacy = document.querySelector('[data-testid="sidebarColumn"], aside[role="complementary"]');
-    if (legacy) {
-      return legacy;
+    let content = primary.parentElement;
+    while (content && content !== document.body && !content.contains(search)) {
+      content = content.parentElement;
+    }
+    if (!content || content === document.body) {
+      return null;
     }
 
-    // 新版 X 去掉了 data-testid，右栏是语义化 aside，按位置识别
-    const aside = [...document.querySelectorAll('aside')].find((el) => {
-      const rect = el.getBoundingClientRect();
-      return rect.width > 0 && rect.left > window.innerWidth / 2;
-    });
-
-    return aside || null;
+    const right = [...content.children].find((element) => element.contains(search));
+    return right ? { primary, right, content } : null;
   }
 
   function mark(element, role) {
@@ -223,43 +216,62 @@ body.${HIDDEN_CLASS} [${ROLE_ATTR}="right"] {
     return element;
   }
 
-  let layoutElements = [];
+  function clearStaleRoles(keep) {
+    for (const element of document.querySelectorAll(`[${ROLE_ATTR}]`)) {
+      if (!keep.includes(element)) {
+        element.removeAttribute(ROLE_ATTR);
+      }
+    }
+  }
+
+  let layoutRoles = null;
+  let layoutMissAt = 0;
 
   function resolveLayout() {
-    if (layoutElements.length && layoutElements.every((el) => el.isConnected)) {
+    if (layoutRoles && layoutRoles.every((element) => element.isConnected)) {
       return;
     }
 
-    const right = findRightSidebar();
-    if (right) {
-      const content = right.parentElement;
-      const row = content && content.parentElement;
-      const main = content && content.querySelector('main');
-      const left = row && [...row.children].find((el) => el !== content && el.querySelector('nav'));
-
-      if (left && row && content && main) {
-        layoutElements = [
-          mark(left, 'left'),
-          mark(right, 'right'),
-          mark(row, 'row'),
-          mark(content, 'content'),
-          mark(main, 'main'),
-        ].filter(Boolean);
+    const columns = findColumns();
+    if (!columns) {
+      // 右栏常晚于时间线渲染：命中失败时降速重试，避免每个 DOM 变动都做全量查询
+      const now = Date.now();
+      if (now - layoutMissAt < COLUMN_MISS_COOLDOWN) {
         return;
       }
+      layoutMissAt = now;
+      layoutRoles = null;
     }
 
-    // 旧版 X（data-testid 时代）兜底
-    const banner = document.querySelector('header[role="banner"]');
-    const primary = document.querySelector('[data-testid="primaryColumn"]');
-    const mainRole = document.querySelector('main[role="main"]');
+    const roles = [];
+    const assign = (element, role) => {
+      if (element && element.isConnected) {
+        mark(element, role);
+        roles.push(element);
+      }
+    };
 
-    layoutElements = [
-      mark(banner, 'left'),
-      mark(right, 'right'),
-      mark(mainRole, 'row'),
-      mark(primary, 'main'),
-    ].filter(Boolean);
+    assign(document.querySelector('header[role="banner"]'), 'left');
+
+    if (columns) {
+      assign(columns.right, 'right');
+      assign(columns.primary, 'primary');
+
+      let node = columns.primary.parentElement;
+      let depth = 0;
+      while (node && node !== document.body && depth < 8) {
+        mark(node, 'expand');
+        roles.push(node);
+        depth += 1;
+        if (node.tagName === 'MAIN') {
+          break;
+        }
+        node = node.parentElement;
+      }
+
+      clearStaleRoles(roles);
+      layoutRoles = roles;
+    }
   }
 
   function updateToggle(toggle, hidden) {
