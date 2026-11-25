@@ -2,7 +2,7 @@
 // @name         X Sidebar Toggle
 // @name:zh-CN   X 侧栏显示隐藏
 // @namespace    https://github.com/yidasanqian/userjs
-// @version      1.2.0
+// @version      1.3.0
 // @description  Show or hide the left navigation menu and the right sidebar on X/Twitter.
 // @description:zh-CN 在 X/Twitter 页面右上角添加按钮，一键显示或隐藏左侧菜单与右侧边栏，让时间线更干净。
 // @author       yidasanqian
@@ -24,7 +24,7 @@
 
   const STORAGE_KEY = 'x_sidebar_hidden';
   const HIDDEN_CLASS = 'x-sidebar-hidden';
-  const TARGET_ATTR = 'data-x-toggle-target';
+  const ROLE_ATTR = 'data-x-toggle-role';
   const WIDGET_ID = 'x-sidebar-toggle-widget';
   const STYLE_ID = 'x-sidebar-toggle-style';
   const REPO_URL = 'https://github.com/yidasanqian/userjs';
@@ -61,26 +61,28 @@
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-body.${HIDDEN_CLASS} [${TARGET_ATTR}="true"] {
-  display: none !important;
-}
-
-/* 右侧边栏：搜索框、相关用户、趋势、页脚 */
-body.${HIDDEN_CLASS} [data-testid="sidebarColumn"],
-body.${HIDDEN_CLASS} aside[role="complementary"] {
+body.${HIDDEN_CLASS} [${ROLE_ATTR}="left"],
+body.${HIDDEN_CLASS} [${ROLE_ATTR}="right"] {
   display: none !important;
 }
 
 @media (min-width: ${MIN_DESKTOP_WIDTH}px) {
-  body.${HIDDEN_CLASS} main[role="main"] {
+  body.${HIDDEN_CLASS} [${ROLE_ATTR}="row"] {
     display: flex !important;
+    width: 100% !important;
     justify-content: center !important;
   }
 
-  body.${HIDDEN_CLASS} [data-testid="primaryColumn"] {
-    width: min(680px, calc(100vw - 32px)) !important;
+  body.${HIDDEN_CLASS} [${ROLE_ATTR}="content"] {
+    display: flex !important;
+    justify-content: center !important;
+    width: auto !important;
     max-width: min(680px, calc(100vw - 32px)) !important;
-    margin-inline: auto !important;
+  }
+
+  body.${HIDDEN_CLASS} [${ROLE_ATTR}="main"] {
+    width: 100% !important;
+    max-width: min(680px, calc(100vw - 32px)) !important;
   }
 }
 
@@ -189,79 +191,75 @@ body.${HIDDEN_CLASS} aside[role="complementary"] {
     document.head.appendChild(style);
   }
 
-  function getPrimaryColumn() {
-    return document.querySelector('[data-testid="primaryColumn"], main[role="main"]');
+  function findRightSidebar() {
+    const marked = document.querySelector(`[${ROLE_ATTR}="right"]`);
+    if (marked && marked.isConnected) {
+      return marked;
+    }
+
+    const legacy = document.querySelector('[data-testid="sidebarColumn"], aside[role="complementary"]');
+    if (legacy) {
+      return legacy;
+    }
+
+    // 新版 X 去掉了 data-testid，右栏是语义化 aside，按位置识别
+    const aside = [...document.querySelectorAll('aside')].find((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.left > window.innerWidth / 2;
+    });
+
+    return aside || null;
   }
 
-  function getSidebarColumn() {
-    return document.querySelector('[data-testid="sidebarColumn"]');
+  function mark(element, role) {
+    if (!element) {
+      return null;
+    }
+
+    if (element.getAttribute(ROLE_ATTR) !== role) {
+      element.setAttribute(ROLE_ATTR, role);
+    }
+
+    return element;
   }
 
-  function looksLikeLeftNavigation(root) {
-    if (!root) {
-      return false;
+  let layoutElements = [];
+
+  function resolveLayout() {
+    if (layoutElements.length && layoutElements.every((el) => el.isConnected)) {
+      return;
     }
 
-    const tabLinks = root.querySelectorAll('[data-testid^="AppTabBar_"]');
-    const composeButton = root.querySelector(
-      '[data-testid="SideNav_NewTweet_Button"], a[href="/compose/post"]'
-    );
+    const right = findRightSidebar();
+    if (right) {
+      const content = right.parentElement;
+      const row = content && content.parentElement;
+      const main = content && content.querySelector('main');
+      const left = row && [...row.children].find((el) => el !== content && el.querySelector('nav'));
 
-    return tabLinks.length >= 2 || Boolean(composeButton);
-  }
-
-  function isSafeLeftCandidate(element) {
-    if (!element || window.innerWidth < MIN_DESKTOP_WIDTH) {
-      return false;
-    }
-
-    const primaryColumn = getPrimaryColumn();
-    const sidebarColumn = getSidebarColumn();
-
-    if (primaryColumn && (primaryColumn === element || primaryColumn.contains(element))) {
-      return false;
-    }
-
-    if (sidebarColumn && (sidebarColumn === element || sidebarColumn.contains(element))) {
-      return false;
-    }
-
-    if (element.closest('[data-testid="primaryColumn"], [data-testid="sidebarColumn"], main[role="main"]')) {
-      return false;
-    }
-
-    const rect = element.getBoundingClientRect();
-    return rect.width > 0 && rect.left < window.innerWidth / 2;
-  }
-
-  function findLeftNavigationTarget() {
-    const existing = document.querySelector(`[${TARGET_ATTR}="true"]`);
-    if (existing && document.documentElement.contains(existing)) {
-      return existing;
-    }
-
-    const selectors = [
-      'header[role="banner"] nav[aria-label="Primary"]',
-      'header[role="banner"] [role="navigation"][aria-label="Primary"]',
-      'header[role="banner"] [data-testid^="AppTabBar_"]',
-      'header[role="banner"] [data-testid="SideNav_NewTweet_Button"]',
-      '[data-testid="AppTabBar_Home_Link"]',
-    ];
-
-    for (const selector of selectors) {
-      const signal = document.querySelector(selector);
-      if (!signal) {
-        continue;
-      }
-
-      const candidate = signal.closest('header[role="banner"]') || signal.closest('[role="navigation"]');
-      if (candidate && looksLikeLeftNavigation(candidate) && isSafeLeftCandidate(candidate)) {
-        candidate.setAttribute(TARGET_ATTR, 'true');
-        return candidate;
+      if (left && row && content && main) {
+        layoutElements = [
+          mark(left, 'left'),
+          mark(right, 'right'),
+          mark(row, 'row'),
+          mark(content, 'content'),
+          mark(main, 'main'),
+        ].filter(Boolean);
+        return;
       }
     }
 
-    return null;
+    // 旧版 X（data-testid 时代）兜底
+    const banner = document.querySelector('header[role="banner"]');
+    const primary = document.querySelector('[data-testid="primaryColumn"]');
+    const mainRole = document.querySelector('main[role="main"]');
+
+    layoutElements = [
+      mark(banner, 'left'),
+      mark(right, 'right'),
+      mark(mainRole, 'row'),
+      mark(primary, 'main'),
+    ].filter(Boolean);
   }
 
   function updateToggle(toggle, hidden) {
@@ -312,7 +310,7 @@ body.${HIDDEN_CLASS} aside[role="complementary"] {
     }
 
     ensureStyle();
-    findLeftNavigationTarget();
+    resolveLayout();
 
     const hidden = readHiddenState();
     document.body.classList.toggle(HIDDEN_CLASS, hidden);
