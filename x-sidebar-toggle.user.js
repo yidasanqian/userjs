@@ -2,7 +2,7 @@
 // @name         X Sidebar Toggle
 // @name:zh-CN   X 侧栏显示隐藏
 // @namespace    https://github.com/yidasanqian/userjs
-// @version      1.4.0
+// @version      1.5.0
 // @description  Show or hide the left navigation menu and the right sidebar on X/Twitter.
 // @description:zh-CN 在 X/Twitter 页面右上角添加按钮，一键显示或隐藏左侧菜单与右侧边栏，让时间线更干净。
 // @author       yidasanqian
@@ -29,7 +29,8 @@
   const STYLE_ID = 'x-sidebar-toggle-style';
   const REPO_URL = 'https://github.com/yidasanqian/userjs';
   const MIN_DESKTOP_WIDTH = 900;
-  const COLUMN_MISS_COOLDOWN = 500;
+  const RESOLVE_MIN_INTERVAL = 400;
+  const MAX_WALK_DEPTH = 6;
 
   const ICONS = {
     sidebar:
@@ -38,9 +39,19 @@
       '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>',
   };
 
+  // 脚本管理器提供 GM 存储时用它，缺权限或换成原生用户脚本时退回 localStorage，
+  // 否则读写都会抛错，点击按钮永远只会在 false/true 之间空转。
   function readHiddenState() {
     try {
-      return Boolean(GM_getValue(STORAGE_KEY, false));
+      if (typeof GM_getValue === 'function') {
+        return Boolean(GM_getValue(STORAGE_KEY, false));
+      }
+    } catch (_) {
+      /* fallthrough */
+    }
+
+    try {
+      return window.localStorage.getItem(STORAGE_KEY) === '1';
     } catch (_) {
       return false;
     }
@@ -48,7 +59,15 @@
 
   function writeHiddenState(hidden) {
     try {
-      GM_setValue(STORAGE_KEY, Boolean(hidden));
+      if (typeof GM_setValue === 'function') {
+        GM_setValue(STORAGE_KEY, Boolean(hidden));
+      }
+    } catch (_) {
+      /* fallthrough */
+    }
+
+    try {
+      window.localStorage.setItem(STORAGE_KEY, hidden ? '1' : '0');
     } catch (_) {
       return;
     }
@@ -68,9 +87,13 @@ body.${HIDDEN_CLASS} [${ROLE_ATTR}="right"] {
 }
 
 @media (min-width: ${MIN_DESKTOP_WIDTH}px) {
-  /* 主列到 main 之间的容器逐层放开宽度，主列再用自动外边距居中 */
+  /* 主列到外层行容器逐层放开宽度；X 现在用 grid 定位主列（父容器是 600px 定宽轨道），
+     光给 main 加自动外边距不会动，得把轨道折叠成单列再居中 */
   body.${HIDDEN_CLASS} [${ROLE_ATTR}="expand"] {
     width: 100% !important;
+    justify-content: center !important;
+    justify-items: center !important;
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 
   body.${HIDDEN_CLASS} [${ROLE_ATTR}="primary"] {
@@ -183,25 +206,77 @@ body.${HIDDEN_CLASS} [${ROLE_ATTR}="right"] {
     document.head.appendChild(style);
   }
 
-  // 新版 X 去掉了右栏的语义化 testid 之外的一切线索，两列列容器用主列与搜索框反查：
-  // 同时包含主列与搜索框的最小祖先即两列的 flex 行，行内包含搜索框的那一列就是右栏。
-  function findColumns() {
-    const primary = document.querySelector('[data-testid="primaryColumn"]');
-    const search = document.querySelector('[data-testid="SearchBox_Search_Input"]');
-    if (!primary || !search) {
+  // 新版 X（x-web 客户端）已经删掉 primaryColumn / sidebarColumn / SearchBox_Search_Input
+  // 这组 testid，只剩下 main 与 aside 的列结构，所以左栏、右栏一律按几何位置在 main 的
+  // 兄弟元素里找：左边缘贴着 main 左侧的是左栏，右边缘贴着 main 右侧的是右栏。
+  // 旧布局若还留着语义化节点，优先采信 testid / header[role="banner"]。
+  function isShown(element) {
+    if (!element || !element.isConnected) {
+      return false;
+    }
+
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  function findMain() {
+    return document.querySelector('main[role="main"]') || document.querySelector('main');
+  }
+
+  function findLayout() {
+    const main = findMain();
+    if (!main || !isShown(main)) {
       return null;
     }
 
-    let content = primary.parentElement;
-    while (content && content !== document.body && !content.contains(search)) {
-      content = content.parentElement;
-    }
-    if (!content || content === document.body) {
+    const mainRect = main.getBoundingClientRect();
+    if (mainRect.width < 160) {
       return null;
     }
 
-    const right = [...content.children].find((element) => element.contains(search));
-    return right ? { primary, right, content } : null;
+    let left = null;
+    let right = null;
+
+    const banner = document.querySelector('header[role="banner"]');
+    if (banner && isShown(banner) && !banner.contains(main) && banner.getBoundingClientRect().right <= mainRect.left + 2) {
+      left = banner;
+    }
+
+    const sidebar = document.querySelector('[data-testid="sidebarColumn"]');
+    if (sidebar && isShown(sidebar) && !sidebar.contains(main) && sidebar.getBoundingClientRect().left >= mainRect.right - 2) {
+      right = sidebar;
+    }
+
+    const expand = [];
+    let node = main.parentElement;
+
+    for (let depth = 0; node && node !== document.body && depth < MAX_WALK_DEPTH; depth += 1) {
+      expand.push(node);
+
+      const siblings = [...node.children].filter(
+        (element) =>
+          element !== main &&
+          !element.contains(main) &&
+          isShown(element) &&
+          window.getComputedStyle(element).position !== 'fixed',
+      );
+
+      if (!right) {
+        right = siblings.find((element) => element.getBoundingClientRect().left >= mainRect.right - 2) || null;
+      }
+
+      if (!left) {
+        left = siblings.find((element) => element.getBoundingClientRect().right <= mainRect.left + 2) || null;
+      }
+
+      if (left && right) {
+        break;
+      }
+
+      node = node.parentElement;
+    }
+
+    return { main, left, right, expand };
   }
 
   function mark(element, role) {
@@ -224,25 +299,12 @@ body.${HIDDEN_CLASS} [${ROLE_ATTR}="right"] {
     }
   }
 
-  let layoutRoles = null;
-  let layoutMissAt = 0;
+  let layout = null;
+  let layoutRoles = [];
+  let lastResolveAt = 0;
+  let warnedMissing = false;
 
-  function resolveLayout() {
-    if (layoutRoles && layoutRoles.every((element) => element.isConnected)) {
-      return;
-    }
-
-    const columns = findColumns();
-    if (!columns) {
-      // 右栏常晚于时间线渲染：命中失败时降速重试，避免每个 DOM 变动都做全量查询
-      const now = Date.now();
-      if (now - layoutMissAt < COLUMN_MISS_COOLDOWN) {
-        return;
-      }
-      layoutMissAt = now;
-      layoutRoles = null;
-    }
-
+  function applyRoles(next) {
     const roles = [];
     const assign = (element, role) => {
       if (element && element.isConnected) {
@@ -251,27 +313,76 @@ body.${HIDDEN_CLASS} [${ROLE_ATTR}="right"] {
       }
     };
 
-    assign(document.querySelector('header[role="banner"]'), 'left');
+    assign(next.left, 'left');
+    assign(next.right, 'right');
+    assign(next.main, 'primary');
 
-    if (columns) {
-      assign(columns.right, 'right');
-      assign(columns.primary, 'primary');
-
-      let node = columns.primary.parentElement;
-      let depth = 0;
-      while (node && node !== document.body && depth < 8) {
-        mark(node, 'expand');
-        roles.push(node);
-        depth += 1;
-        if (node.tagName === 'MAIN') {
-          break;
+    // 只有左右两栏都定位到时才动容器宽度：否则被收紧的轨道会把仍在显示的
+    // 右栏挤到主列下面。
+    if (next.left && next.right) {
+      for (const element of next.expand) {
+        if (element.isConnected) {
+          mark(element, 'expand');
+          roles.push(element);
         }
-        node = node.parentElement;
       }
-
-      clearStaleRoles(roles);
-      layoutRoles = roles;
     }
+
+    clearStaleRoles(roles);
+    layoutRoles = roles;
+    layout = next;
+  }
+
+  function layoutComplete() {
+    return Boolean(layout && layout.left && layout.right && layoutRoles.length && layoutRoles.every((element) => element.isConnected));
+  }
+
+  // 隐藏中的列量出来是 0x0，直接解析会把 left/right 判成不存在并清掉标记，
+  // 于是「隐藏状态下再解析一次」会让侧栏重新冒出来。解析期间先摘掉隐藏类，
+  // 同一个任务里再挂回去，不会产生中间帧。
+  function measureVisible(fn) {
+    const body = document.body;
+    const wasHidden = body.classList.contains(HIDDEN_CLASS);
+    if (wasHidden) {
+      body.classList.remove(HIDDEN_CLASS);
+    }
+
+    try {
+      return fn();
+    } finally {
+      if (wasHidden) {
+        body.classList.add(HIDDEN_CLASS);
+      }
+    }
+  }
+
+  function resolveLayout(force) {
+    if (!document.body) {
+      return;
+    }
+
+    if (!force && layoutComplete()) {
+      return;
+    }
+
+    const now = Date.now();
+    if (!force && now - lastResolveAt < RESOLVE_MIN_INTERVAL) {
+      return;
+    }
+    lastResolveAt = now;
+
+    const next = measureVisible(findLayout);
+    if (!next) {
+      layout = null;
+      layoutRoles = [];
+      if (!warnedMissing && document.readyState === 'complete') {
+        warnedMissing = true;
+        console.warn('[X Sidebar Toggle] 未找到 main 列，页面结构可能又变了；可在控制台执行 __xSidebarToggle.debug() 查看定位结果。');
+      }
+      return;
+    }
+
+    applyRoles(next);
   }
 
   function updateToggle(toggle, hidden) {
@@ -322,7 +433,7 @@ body.${HIDDEN_CLASS} [${ROLE_ATTR}="right"] {
     }
 
     ensureStyle();
-    resolveLayout();
+    resolveLayout(false);
 
     const hidden = readHiddenState();
     document.body.classList.toggle(HIDDEN_CLASS, hidden);
@@ -359,12 +470,16 @@ body.${HIDDEN_CLASS} [${ROLE_ATTR}="right"] {
       const original = history[methodName];
       history[methodName] = function (...args) {
         const result = original.apply(this, args);
+        resolveLayout(true);
         scheduleApply();
         return result;
       };
     }
 
-    window.addEventListener('popstate', scheduleApply);
+    window.addEventListener('popstate', () => {
+      resolveLayout(true);
+      scheduleApply();
+    });
   }
 
   function startObserver() {
@@ -375,11 +490,47 @@ body.${HIDDEN_CLASS} [${ROLE_ATTR}="right"] {
 
     root.__xLeftMenuToggleObserved = true;
 
+    // 路由切换、右栏延迟挂载都靠这层观察兜底；resolveLayout 自带 400ms 节流。
     new MutationObserver(scheduleApply).observe(root, {
       childList: true,
       subtree: true,
     });
   }
+
+  function debug() {
+    const main = findMain();
+    const next = findLayout();
+    const describe = (element) => {
+      if (!element) {
+        return null;
+      }
+      const rect = element.getBoundingClientRect();
+      return {
+        tag: element.tagName.toLowerCase(),
+        testid: element.getAttribute('data-testid'),
+        role: element.getAttribute('role'),
+        width: Math.round(rect.width),
+        left: Math.round(rect.left),
+      };
+    };
+
+    return {
+      url: location.href,
+      hidden: readHiddenState(),
+      viewportWidth: window.innerWidth,
+      main: describe(main),
+      left: describe(next && next.left),
+      right: describe(next && next.right),
+      expandDepth: next ? next.expand.length : 0,
+      roles: [...document.querySelectorAll(`[${ROLE_ATTR}]`)].map((element) => `${element.tagName.toLowerCase()}:${element.getAttribute(ROLE_ATTR)}`),
+    };
+  }
+
+  window.__xSidebarToggle = {
+    apply: applyState,
+    resolve: () => resolveLayout(true),
+    debug,
+  };
 
   function init() {
     patchHistory();
